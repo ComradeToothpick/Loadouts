@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Metadata.Ecma335;
 using thebasics.Extensions;
+using thebasics.ModSystems.ProximityChat;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
@@ -32,7 +33,11 @@ public class Loadout
     public Loadout(string loadoutName, IServerPlayer byPlayer, ICoreAPI api)
     {
         this.api = api;
-        nickName = SerializerUtil.Deserialize<string>(byPlayer.GetModdata("BASIC_NICKNAME"), byPlayer.PlayerName);
+        if (api.ModLoader.GetModSystem<RPProximityChatSystem>() != null)
+        {
+            nickName = byPlayer.GetNickname();//this only works if the basics is installed, so just check that it's there first
+        }
+        
         api.Logger.Event("Nickname: " + nickName);
         clothes.Clear();
         count = 0;

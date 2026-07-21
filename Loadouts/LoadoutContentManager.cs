@@ -213,10 +213,6 @@ public class LoadoutContentManager : ModSystem
         prevLoadouts[byPlayer.PlayerUID] = CreateLoadout(byPlayer, byPlayer.PlayerUID, byPlayer.Entity.Api);
         //system.setCharacterClass(byPlayer.Entity, loadout.packet.CharacterClass, false);
         //byPlayer.SetModData("createCharacter", true);
-        foreach (CharacterClass Class in system.characterClasses)
-        {
-            _sapi.Logger.Event("classCode: "  + Class.Code);
-        }
         //Type type = typeof(CharacterSystem);
         //object obj = Activator.CreateInstance(type);
         //MethodInfo method = type.GetMethod("onCharacterSelection", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly );
@@ -224,9 +220,11 @@ public class LoadoutContentManager : ModSystem
         
         CharacterUpdate(byPlayer, loadout.packet);
         loadout.GiveInventoryCopy(byPlayer);
-        SetNickname(loadout.nickName, byPlayer);
-        
-        
+        if (_sapi.ModLoader.GetModSystem<RPProximityChatSystem>() != null)
+        {
+            byPlayer.SetNickname(loadout.nickName);
+            SwapOutNameTag(byPlayer);
+        }
     }
     
     private void CharacterUpdate(IServerPlayer fromPlayer, CharacterSelectionPacket p)
@@ -305,7 +303,6 @@ public class LoadoutContentManager : ModSystem
                 loadout.Inventories.Add(invKey3, inv3);
                 
                 loadout.FromTreeAttributes(tree);
-                _sapi.Logger.Event("(GetLoadout) Packet Class Name: " + loadout.packet.CharacterClass);
                 ApplyLoadout(loadout, (IServerPlayer)player);
                 return;
             }
@@ -323,27 +320,14 @@ public class LoadoutContentManager : ModSystem
         }
 
         var tree = new TreeAttribute();
+        if (_sapi.ModLoader.GetModSystem<RPProximityChatSystem>() != null)
+        {
+            loadout.nickName = ((IServerPlayer)player).GetNickname();//Make sure to collect this just in case
+        }
         loadout.ToTreeAttributes(tree);
 
         string name = $"{loadoutName}-{player.PlayerUID}.dat";
         File.WriteAllBytes($"{path}/{name}", tree.ToBytes());
-    }
-
-    public Loadout LoadLastLoadout(IServerPlayer player, int offset = 0)
-    {
-        if (MaxLoadoutSavedPerPlayer <= offset)
-        {
-            throw new IndexOutOfRangeException("offset is too large or save data disabled");
-        }
-
-        string file = GetLoadoutDataFiles(player).ElementAt(offset);
-
-        var tree = new TreeAttribute();
-        tree.FromBytes(File.ReadAllBytes(file));
-
-        var loadout = new Loadout(player.Entity.Api);
-        loadout.FromTreeAttributes(tree);
-        return loadout;
     }
     
     private void SwapOutNameTag(IServerPlayer player)
@@ -382,8 +366,6 @@ public class LoadoutContentManager : ModSystem
 
         behavior.SetName(displayName);
     }
-    
-    
 
     private void SetNickname(string nickname, IServerPlayer byPlayer)
     {
@@ -392,7 +374,6 @@ public class LoadoutContentManager : ModSystem
             _sapi.Logger.Event("RPProximityChatSystem not found");
             return;
         }
-        _sapi.Logger.Event("Setting nickname to: " + nickname);
         byPlayer.SetNickname(nickname);
         SwapOutNameTag(byPlayer);
     }
