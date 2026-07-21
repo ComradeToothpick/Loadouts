@@ -17,6 +17,10 @@ using Vintagestory.API.Server;
 using Vintagestory.API.Util;
 using Vintagestory.Common;
 using Vintagestory.GameContent;
+using thebasics.Configs;
+using thebasics.Extensions;
+using thebasics.ModSystems.ProximityChat;
+using thebasics.Utilities;
 
 namespace Loadouts;
 
@@ -32,7 +36,7 @@ public class LoadoutContentManager : ModSystem
     public override void StartServerSide(ICoreServerAPI api)
     {
         _sapi = api;
-        api.Event.PlayerJoin += OnPlayerJoin;
+        //api.Event.PlayerJoin += OnPlayerJoin;
         system = api.ModLoader.GetModSystem<CharacterSystem>();
         var rootCommand = api.ChatCommands.Create("loadout")
             .WithDescription("A tool for admins to quickly change equipment, character, and nickname.")
@@ -46,12 +50,12 @@ public class LoadoutContentManager : ModSystem
                 if (input != string.Empty)
                 {
                     string? loadoutName = input;
-                    string? className = byPlayer.Entity.WatchedAttributes["characterClass"].ToString();
+                    string? className = byPlayer.Entity.WatchedAttributes.GetAsString("characterClass");
                     if (string.IsNullOrEmpty(loadoutName)) return TextCommandResult.Error("No loadout name provided");
                     if (string.IsNullOrEmpty(className)) return TextCommandResult.Error("Failed to collect class");
-                    Loadout loadout = CreateLoadout((IServerPlayer)byPlayer, loadoutName, className, api);
+                    Loadout loadout = CreateLoadout((IServerPlayer)byPlayer, loadoutName, api);
                     SaveLoadoutContent(loadout, byPlayer, loadoutName);
-                    return TextCommandResult.Success();
+                    return TextCommandResult.Success($"Loadout {loadoutName} has been saved");
                 }
                 else
                 {
@@ -69,7 +73,7 @@ public class LoadoutContentManager : ModSystem
                     string? loadoutName = input;
                     if (string.IsNullOrEmpty(loadoutName)) return TextCommandResult.Error("No loadout name provided");
                     GetLoadout((IServerPlayer)byPlayer, loadoutName);
-                    return TextCommandResult.Success();
+                    return TextCommandResult.Success($"Loadout {loadoutName} has been loaded");
                 }
                 else
                 {
@@ -81,11 +85,11 @@ public class LoadoutContentManager : ModSystem
             .HandleWith((args) =>
             {
                 var byPlayer = args.Caller.Player;
-                Loadout oldLoadout = CreateLoadout((IServerPlayer)byPlayer, byPlayer.PlayerUID, (byPlayer.Entity.WatchedAttributes["characterClass"] as StringAttribute).ToString(), byPlayer.Entity.Api);
-                Loadout loadout = prevLoadouts[byPlayer.PlayerUID];
+                Loadout oldLoadout = CreateLoadout((IServerPlayer)byPlayer, byPlayer.PlayerUID, byPlayer.Entity.Api);
+                Loadout loadout = LoadPrevLoadout((IServerPlayer)byPlayer);
                 prevLoadouts[byPlayer.PlayerUID] = oldLoadout;
                 ApplyLoadout(loadout, (IServerPlayer)byPlayer);
-                return TextCommandResult.Success();
+                return TextCommandResult.Success("Previous loadout loaded");
             });
             
         var subCommandDelete = rootCommand.BeginSubCommand("delete").WithArgs(api.ChatCommands.Parsers.Unparsed("loadoutName"))
@@ -97,8 +101,7 @@ public class LoadoutContentManager : ModSystem
                 {
                     string? loadoutName = input;
                     if (string.IsNullOrEmpty(loadoutName)) return TextCommandResult.Error("No loadout name provided");
-                    DeleteLoadout((IServerPlayer)byPlayer, loadoutName);
-                    return TextCommandResult.Success();
+                    return DeleteLoadout((IServerPlayer)byPlayer, loadoutName);
                 }
                 else
                 {
@@ -117,6 +120,11 @@ public class LoadoutContentManager : ModSystem
     private void ListLoadouts(IServerPlayer byPlayer)
     {
         string[] files = GetLoadoutDataFiles(byPlayer);
+        if (files.Length == 0)
+        {
+            _sapi.SendMessage(byPlayer, 0, "No loadouts found", EnumChatType.OwnMessage);
+            return;
+        }
         string path = GetLoadoutDataPath(byPlayer);
         int count = 1;
         foreach (string file in files)
@@ -127,9 +135,13 @@ public class LoadoutContentManager : ModSystem
         }
     }
 
-    private void DeleteLoadout(IServerPlayer byPlayer, string loadoutName)
+    private TextCommandResult DeleteLoadout(IServerPlayer byPlayer, string loadoutName)
     {
         string[] files = GetLoadoutDataFiles(byPlayer);
+        if (files.Length == 0)
+        {
+            return TextCommandResult.Error("No Loadouts found");
+        }
         string path = GetLoadoutDataPath(byPlayer);
         foreach (string file in files)
         {
@@ -138,11 +150,10 @@ public class LoadoutContentManager : ModSystem
             if (fileTruncated == loadoutName)
             {
                 File.Delete(file);
-                _sapi.SendMessage(byPlayer, 0, $"{fileTruncated} deleted successfully", EnumChatType.OwnMessage);
-                return;
+                return TextCommandResult.Success($"Loadout {loadoutName} deleted successfully");
             }
         }
-        _sapi.SendMessage(byPlayer, 0, "Failed to delete loadout named: " + loadoutName, EnumChatType.OwnMessage);
+        return TextCommandResult.Error("Failed to delete loadout named: " + loadoutName);
     }
 
     public override void AssetsFinalize(ICoreAPI api)
@@ -157,10 +168,10 @@ public class LoadoutContentManager : ModSystem
         GlobalConstants.hotBarInvClassName
     ];
 
-    private Loadout CreateLoadout(IServerPlayer byPlayer, string loadoutName, string characterClass, ICoreAPI api)
+    private Loadout CreateLoadout(IServerPlayer byPlayer, string loadoutName, ICoreAPI api)
     {
         string serverLoadoutName = loadoutName + "-" + byPlayer.PlayerUID;
-        Loadout loadout = new Loadout(serverLoadoutName, characterClass, byPlayer, api);
+        Loadout loadout = new Loadout(serverLoadoutName, byPlayer, api);
         
         foreach (InventoryBasePlayer inv in byPlayer.InventoryManager.InventoriesOrdered)
         {
@@ -168,56 +179,80 @@ public class LoadoutContentManager : ModSystem
             int invCount = inv.Count;
             if (invCount == 0) continue;
             string invID = inv.InventoryID;
-            _sapi.Logger.Event("invID: " + invID);
-            loadout.Inventories[invID] = (InventoryBasePlayer)inv;
-            int loadoutCount = loadout.Inventories[invID].Count;
-            _sapi.Logger.Event("loadoutCount: " + loadoutCount);
-            _sapi.Logger.Event("invCount: " + invCount);
-            if (loadoutCount < invCount) loadout.Inventories[invID].GenEmptySlots(invCount - loadoutCount);
+            /*
             if (inv is InventoryPlayerBackpacks)
             {
-                int inv2Count = ((InventoryPlayerBackpacks)inv).bagInv.Count;
-                _sapi.Logger.Event("inv2Count: " + inv2Count);
-                for (int i = invCount; i < 2 * (invCount - inv2Count) + inv2Count; ++i)//Bug in InventoryPlayerBackpack this[int slotId] setter. missing else at the start of the last line
+                loadout.Inventories[invID] = new InventoryPlayerBackpacksFix(inv.InventoryID, api, (InventoryPlayerBackpacks)inv);
+                int loadoutCount = loadout.Inventories[invID].Count;
+
+                if (loadoutCount < invCount) loadout.Inventories[invID].GenEmptySlots(invCount - loadoutCount);
+                //InventoryPlayerBackpacksFix playerInvFix = inv as InventoryPlayerBackpacksFix;
+                //InventoryPlayerBackpacksFix invFix = (InventoryPlayerBackpacksFix)loadout.Inventories[invID];
+                for (int i = 0; i < (invCount); ++i)//Bug in InventoryPlayerBackpack this[int slotId] setter. missing else at the start of the last line
                 {
                     loadout.Inventories[invID][i] = inv[i];
                 }
             }
             else
             {
+                loadout.Inventories[invID] = (InventoryBasePlayer)inv;
+                int loadoutCount = loadout.Inventories[invID].Count;
+
+                if (loadoutCount < invCount) loadout.Inventories[invID].GenEmptySlots(invCount - loadoutCount);
                 for (int i = 0; i < inv.Count; ++i)
                 {
                     loadout.Inventories[invID][i] = inv[i];
                 }
-            }
+            }*/
         }
         return loadout;
     }
 
     public void ApplyLoadout(Loadout loadout, IServerPlayer byPlayer)
     {
-        prevLoadouts[byPlayer.PlayerUID] = CreateLoadout(byPlayer, byPlayer.PlayerUID,
-            (byPlayer.Entity.WatchedAttributes["characterClass"] as StringAttribute).ToString(), byPlayer.Entity.Api);
-        system.setCharacterClass(byPlayer.Entity, loadout.packet.CharacterClass, false);
+        prevLoadouts[byPlayer.PlayerUID] = CreateLoadout(byPlayer, byPlayer.PlayerUID, byPlayer.Entity.Api);
+        //system.setCharacterClass(byPlayer.Entity, loadout.packet.CharacterClass, false);
+        //byPlayer.SetModData("createCharacter", true);
+        foreach (CharacterClass Class in system.characterClasses)
+        {
+            _sapi.Logger.Event("classCode: "  + Class.Code);
+        }
+        //Type type = typeof(CharacterSystem);
+        //object obj = Activator.CreateInstance(type);
+        //MethodInfo method = type.GetMethod("onCharacterSelection", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly );
+        //method.Invoke(obj, new object[] { byPlayer, loadout.packet });
         
-        Type type = typeof(CharacterSystem);
-        object obj = Activator.CreateInstance(type);
-        MethodInfo method = type.GetMethod("onCharacterSelection", BindingFlags.NonPublic | BindingFlags.Instance);
-        method.Invoke(obj, new object[] { byPlayer, loadout.packet });
+        CharacterUpdate(byPlayer, loadout.packet);
         loadout.GiveInventoryCopy(byPlayer);
-        byPlayer.SetModdata("BASIC_NICKNAME", SerializerUtil.Serialize(loadout.nickName));
+        SetNickname(loadout.nickName, byPlayer);
+        
+        
+    }
+    
+    private void CharacterUpdate(IServerPlayer fromPlayer, CharacterSelectionPacket p)
+    {
+        //fromPlayer.SetModData<bool>("createCharacter", true);
+        system.setCharacterClass(fromPlayer.Entity, p.CharacterClass, false);
+        EntityBehaviorExtraSkinnable behavior = fromPlayer.Entity.GetBehavior<EntityBehaviorExtraSkinnable>();
+        behavior.ApplyVoice(p.VoiceType, p.VoicePitch, false);
+        foreach (KeyValuePair<string, string> skinPart in p.SkinParts)
+            behavior.selectSkinPart(skinPart.Key, skinPart.Value, false);
+        DateTime utcNow = DateTime.UtcNow;
+        fromPlayer.ServerData.LastCharacterSelectionDate = $"{utcNow.ToShortDateString()} {utcNow.ToShortTimeString()}";
+        
+        fromPlayer.Entity.WatchedAttributes.MarkPathDirty("skinConfig");
+        fromPlayer.BroadcastPlayerData(true);
     }
 
-    public void LoadPrevLoadout(IServerPlayer byPlayer)
+    public Loadout LoadPrevLoadout(IServerPlayer byPlayer)
     {
         EntityBehaviorExtraSkinnable behavior = byPlayer.Entity.GetBehavior<EntityBehaviorExtraSkinnable>();
         if (!prevLoadouts.ContainsKey(byPlayer.PlayerUID))
         {
             _sapi.SendMessage(byPlayer, 0, "Previous loadout not found", EnumChatType.CommandError);
-            return;
+            return null;
         }
-        Loadout loadout = prevLoadouts[byPlayer.PlayerUID];
-        ApplyLoadout(loadout, byPlayer);
+        return prevLoadouts[byPlayer.PlayerUID];
     }
 
     public string GetLoadoutDataPath(IPlayer player)
@@ -244,11 +279,7 @@ public class LoadoutContentManager : ModSystem
         string filename = $"{loadoutName}-{player.PlayerUID}.dat";
         foreach (string file in files)
         {
-            if (!(file == path + "\\" + filename)) 
-            {
-                continue;
-            }
-            else
+            if ((file == path + "\\" + filename)) 
             {
                 var tree = new TreeAttribute();
                 tree.FromBytes(File.ReadAllBytes(file));
@@ -257,10 +288,7 @@ public class LoadoutContentManager : ModSystem
                 loadout.Inventories = new Dictionary<string, InventoryBasePlayer>();
                 
                 string invKey1 = invClassNames[0] + "-" + player.PlayerUID;
-                InventoryPlayerBackpacks inv1 = new InventoryPlayerBackpacks(invKey1, player.PlayerUID, player.Entity.Api);
-                
-                string invKey4 = invClassNames[0] + "-bag-" + player.PlayerUID;
-                InventoryPlayerBackpacks inv4 = new InventoryPlayerBackpacks(invKey4, player.PlayerUID, player.Entity.Api);
+                InventoryPlayerBackpacksFix inv1 = new InventoryPlayerBackpacksFix(invKey1, player.PlayerUID, player.Entity.Api);
                 
                 string invKey2 = invClassNames[1] + "-" + player.PlayerUID;
                 InventoryCharacter inv2 = new InventoryCharacter(invKey2, player.PlayerUID, player.Entity.Api);
@@ -275,9 +303,9 @@ public class LoadoutContentManager : ModSystem
                 loadout.Inventories.Add(invKey1, inv1);
                 loadout.Inventories.Add(invKey2, inv2);
                 loadout.Inventories.Add(invKey3, inv3);
-                loadout.Inventories.Add(invKey4, inv4);
                 
                 loadout.FromTreeAttributes(tree);
+                _sapi.Logger.Event("(GetLoadout) Packet Class Name: " + loadout.packet.CharacterClass);
                 ApplyLoadout(loadout, (IServerPlayer)player);
                 return;
             }
@@ -317,9 +345,55 @@ public class LoadoutContentManager : ModSystem
         loadout.FromTreeAttributes(tree);
         return loadout;
     }
-
-    private void OnPlayerJoin(IServerPlayer player)
+    
+    private void SwapOutNameTag(IServerPlayer player)
     {
-        
+        if (_sapi.ModLoader.GetModSystem<RPProximityChatSystem>() == null) return;
+        ModConfig Config = _sapi.ModLoader.GetModSystem<RPProximityChatSystem>().Config;
+        var behavior = player.Entity.GetBehavior<EntityBehaviorNameTag>();
+
+        if (behavior == null)
+        {
+            return;
+        }
+
+        // Apply visibility/range settings regardless of whether we're overriding the display name.
+        behavior.ShowOnlyWhenTargeted = Config.HideNametagUnlessTargeting;
+        behavior.RenderRange = Config.NametagRenderRange;
+
+        // Determine the visible nametag string.
+        string displayName;
+        if (Config.ShowNicknameInNametag)
+        {
+            var nickname = player.GetNickname();
+            if (string.IsNullOrWhiteSpace(nickname))
+            {
+                displayName = Config.ShowPlayerNameInNametag ? player.PlayerName : "";
+            }
+            else
+            {
+                displayName = Config.ShowPlayerNameInNametag ? $"{nickname} ({player.PlayerName})" : nickname;
+            }
+        }
+        else
+        {
+            displayName = Config.ShowPlayerNameInNametag ? player.PlayerName : "";
+        }
+
+        behavior.SetName(displayName);
+    }
+    
+    
+
+    private void SetNickname(string nickname, IServerPlayer byPlayer)
+    {
+        if (_sapi.ModLoader.GetModSystem<RPProximityChatSystem>() == null)
+        {
+            _sapi.Logger.Event("RPProximityChatSystem not found");
+            return;
+        }
+        _sapi.Logger.Event("Setting nickname to: " + nickname);
+        byPlayer.SetNickname(nickname);
+        SwapOutNameTag(byPlayer);
     }
 }
