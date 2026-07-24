@@ -5,6 +5,7 @@ using System.Reflection.Metadata.Ecma335;
 using thebasics.Extensions;
 using thebasics.ModSystems.ProximityChat;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.Server;
@@ -17,23 +18,31 @@ namespace Loadouts;
 public class Loadout
 {
     public Dictionary<string, InventoryBasePlayer> Inventories { get; set; }
+    public uint mask = 15;
     public string OwnerUID;
     public string loadoutName;
+    public EntityPos entityPos;
     public CharacterSelectionPacket packet;
     private List<ClothStack> clothes = new();
     private int count = 0;
     private Dictionary<string, string> skinParts = new();
     public string nickName;
     private ICoreAPI api;
+    private const uint all = 15;
+    private const uint character = 1;
+    private const uint nickname = 2;
+    private const uint inventory = 4;
+    private const uint position = 8;
 
     public Loadout(ICoreAPI api)
     {
         this.api = api;
     }
-    public Loadout(string loadoutName, IServerPlayer byPlayer, ICoreAPI api)
+    public Loadout(string loadoutName, IServerPlayer byPlayer, ICoreAPI api, uint mods = 0)
     {
         this.api = api;
-        if (api.ModLoader.GetModSystem<RPProximityChatSystem>() != null)
+        this.entityPos = byPlayer.Entity.Pos;
+        if (api.ModLoader.GetModSystem<RPProximityChatSystem>() != null && (mods & inventory) == inventory)
         {
             nickName = byPlayer.GetNickname();//this only works if the basics is installed, so just check that it's there first
         }
@@ -306,13 +315,19 @@ public class Loadout
   }
     */
     
-    public void ToTreeAttributes(ITreeAttribute invtree)
+    public void ToTreeAttributes(ITreeAttribute invtree, uint mods)
     {
+        invtree.SetInt("modMask", (int)mods);//Keep track of the modMask to prevent attempting to load data that was never saved.
         invtree.SetBytes("loadoutName", SerializerUtil.Serialize(loadoutName));
         invtree.SetBytes("ownerUID", SerializerUtil.Serialize(OwnerUID));
-        invtree.SetBytes("nickName", SerializerUtil.Serialize(nickName));
-        invtree.SetBytes("packet", SerializerUtil.Serialize(packet));
-        foreach (KeyValuePair<string, InventoryBasePlayer> kvp in Inventories)
+        //Only saving data that is requested to be saved
+        if ((mods & nickname) == nickname) invtree.SetBytes("nickName", SerializerUtil.Serialize(nickName));//nickname
+        
+        if ((mods & character) == character) invtree.SetBytes("packet", SerializerUtil.Serialize(packet));//character
+        
+        if ((mods & position) == position) invtree.SetBytes("entityPos", SerializerUtil.Serialize(entityPos));//position
+        
+        if ((mods & inventory) == inventory) foreach (KeyValuePair<string, InventoryBasePlayer> kvp in Inventories)//inventory
         {
             if (kvp.Value is InventoryPlayerCreative) continue;
             if (kvp.Value is InventoryPlayerBackpacks)
@@ -342,13 +357,20 @@ public class Loadout
         }
     }
     
-    public void FromTreeAttributes(ITreeAttribute invtree)
+    public void FromTreeAttributes(ITreeAttribute invtree, uint mods)
     {
+        mask = (uint)invtree.GetInt("modMask");
+        mask = (mask & mods);
         loadoutName = SerializerUtil.Deserialize<string>(invtree.GetBytes("loadoutName"));
         OwnerUID = SerializerUtil.Deserialize<string>(invtree.GetBytes("ownerUID"));
-        nickName = SerializerUtil.Deserialize<string>(invtree.GetBytes("nickName"));
-        packet = SerializerUtil.Deserialize<CharacterSelectionPacket>(invtree.GetBytes("packet"));
-        foreach (KeyValuePair<string, InventoryBasePlayer> kvp in Inventories)
+        
+        if ((mask & nickname) == nickname) nickName = SerializerUtil.Deserialize<string>(invtree.GetBytes("nickName"));
+        
+        if ((mask & character) == character)packet = SerializerUtil.Deserialize<CharacterSelectionPacket>(invtree.GetBytes("packet"));
+        
+        if ((mask & position) == position) entityPos = SerializerUtil.Deserialize<EntityPos>(invtree.GetBytes("entityPos"));
+        
+        if ((mask & inventory) == inventory) foreach (KeyValuePair<string, InventoryBasePlayer> kvp in Inventories)
         {
             if (kvp.Value is InventoryPlayerBackpacks)
             {
@@ -376,26 +398,6 @@ public class Loadout
                             api.Logger.Event("(FromTreeAttributes) slot is null");
                         }
                     }
-                    /*
-                    for (int index = 0; index < backpackSlots; ++index)
-                    {
-                        ItemStack itemstack1 = invtree.GetItemstack(kvp.Key + "-bag-" + index);
-                        if (itemstack1 != null)
-                        {
-                            slots[index].Itemstack = itemstack1;
-                            api.Logger.Event("(FromTreeAttributes) slot itemstack: " + slots[index].Itemstack.Id);
-                        }
-                        else
-                        {
-                            api.Logger.Event("(FromTreeAttributes) slot is null");
-                        }
-                    
-                        if (this.api?.World != null)
-                        {
-                            itemstack1?.ResolveBlockOrItem(this.api.World);
-                        }
-                    }
-                    */
                 }
                 else
                 {
