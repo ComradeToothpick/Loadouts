@@ -1,6 +1,7 @@
 {
     "$schema": "https://moddbcdn.vintagestory.at/schema/modinfo.latest.json",
-    "type": "Code",
+    "type": "code",
+    "side": "server",
     "modid": "loadouts",
     "name": "Loadouts",
     "authors": [

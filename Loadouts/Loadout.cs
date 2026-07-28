@@ -15,6 +15,33 @@ using Vintagestory.GameContent;
 
 namespace Loadouts;
 
+public struct SurvivalPlayerData
+{
+    public float health;
+    public float satiety;
+    public float hydration;
+}
+
+public struct NutritionData
+{
+    public float fruit;
+    public float vegetable;
+    public float grain;
+    public float protein;
+    public float dairy;
+}
+
+public struct Ailments
+{
+    public float psychadelics;
+    public float intoxication;
+    public float temporalStability;
+}
+
+//EntityBehaviorHealth behavior = byPlayer.Entity.GetBehavior<EntityBehaviorHealth>();
+//EntityBehaviorHunger behavior2 = byPlayer.Entity.GetBehavior<EntityBehaviorHunger>();
+//EntityBehaviorTemporalStabilityAffected behavior3 = byPlayer.Entity.GetBehavior<EntityBehaviorTemporalStabilityAffected>();
+
 public class Loadout
 {
     public Dictionary<string, InventoryBasePlayer> Inventories { get; set; }
@@ -23,10 +50,14 @@ public class Loadout
     public string loadoutName;
     public EntityPos entityPos;
     public CharacterSelectionPacket packet;
+    public string nickName;
+    public EnumGameMode gameMode;
+    public SurvivalPlayerData survivalPlayerData;
+    public NutritionData nutritionData;
+    
     private List<ClothStack> clothes = new();
     private int count = 0;
     private Dictionary<string, string> skinParts = new();
-    public string nickName;
     private ICoreAPI api;
     private const uint all = 15;
     private const uint character = 1;
@@ -42,12 +73,11 @@ public class Loadout
     {
         this.api = api;
         this.entityPos = byPlayer.Entity.Pos;
-        if (api.ModLoader.GetModSystem<RPProximityChatSystem>() != null && (mods & inventory) == inventory)
+        if (LoadoutContentManager.theBasicsLoaded && (mods & nickname) == nickname)
         {
-            nickName = byPlayer.GetNickname();//this only works if the basics is installed, so just check that it's there first
+            nickName = byPlayer.GetNickname();
         }
         
-        api.Logger.Event("Nickname: " + nickName);
         clothes.Clear();
         count = 0;
         byPlayer.InventoryManager.Inventories["character-" + byPlayer.PlayerUID].Foreach(slot =>
@@ -64,7 +94,7 @@ public class Loadout
         foreach (AppliedSkinnablePartVariant appliedSkinPart in (IEnumerable<AppliedSkinnablePartVariant>) behavior.AppliedSkinParts)
             skinParts[appliedSkinPart.PartCode] = appliedSkinPart.Code;
         string classCode = byPlayer.Entity.WatchedAttributes.GetAsString("characterClass", "commoner");
-        api.Logger.Event("Class Code: " + classCode);
+        //api.Logger.Event("Class Code: " + classCode);
         packet = new()
         {
             DidSelect = true,
@@ -82,7 +112,6 @@ public class Loadout
         foreach (string invName in LoadoutContentManager.invClassNames)
         {
             string invKey = invName + "-" + byPlayer.PlayerUID;
-            //string newInvKey = loadoutName + "-" + invKey;
             
             if (!byPlayer.InventoryManager.Inventories.ContainsKey(invKey))
             {
@@ -189,7 +218,6 @@ public class Loadout
                             player.InventoryManager.Inventories[kvp.Key][i].TakeOutWhole();
                         }
                     }
-                    //slot.Itemstack.Collectible.Attributes = api.Assets.;
                     player.InventoryManager.Inventories[kvp.Key][i].MarkDirty();
                 }
                 else if (kvp.Value is InventoryPlayerBackpacks)
@@ -197,14 +225,14 @@ public class Loadout
                     ItemStack? stack = ((InventoryPlayerBackpacks)kvp.Value)[i].Itemstack;
                     if (stack != null)
                     {
-                        if (((InventoryPlayerBackpacksFix)player.InventoryManager.Inventories[kvp.Key])[i].Itemstack !=
+                        if (((InventoryPlayerBackpacks)player.InventoryManager.Inventories[kvp.Key])[i].Itemstack !=
                             null)
                         {
-                            ((InventoryPlayerBackpacksFix)player.InventoryManager.Inventories[kvp.Key])[i].Itemstack.SetFrom(stack);
+                            ((InventoryPlayerBackpacks)player.InventoryManager.Inventories[kvp.Key])[i].Itemstack.SetFrom(stack);
                         }
                         else
                         {
-                            ((InventoryPlayerBackpacksFix)player.InventoryManager.Inventories[kvp.Key])[i].Itemstack = stack.Clone();
+                            ((InventoryPlayerBackpacks)player.InventoryManager.Inventories[kvp.Key])[i].Itemstack = stack.Clone();
                         }
                     }
                     else
@@ -242,14 +270,6 @@ public class Loadout
             }
         }
     }
-    //public Dictionary<string, InventoryBasePlayer> Inventories { get; set; }
-    //public string OwnerUID;
-    //public string loadoutName;
-    //public CharacterSelectionPacket packet;
-    //private List<ClothStack> clothes = new List<ClothStack>();
-    //private int count = 0;
-    //private Dictionary<string, string> skinParts = new Dictionary<string, string>();
-    //public string nickName;
     
     public void SlotsToTreeAttributes(ItemSlot[] slots, ITreeAttribute tree)
     {
@@ -262,66 +282,17 @@ public class Loadout
         }
         tree[nameof (slots)] = (IAttribute) treeAttribute;
     }
-    /*
-    public void InventoryCharacterFromTreeAttributes(ITreeAttribute tree)
-    {
-        this.slots = this.SlotsFromTreeAttributes(tree);
-        if (this.slots.Length == 10)
-        {
-            ItemSlot[] slots = this.slots;
-            this.slots = this.GenEmptySlots(12);
-            for (int index = 0; index < slots.Length; ++index)
-                this.slots[index] = slots[index];
-        }
-        if (this.slots.Length != 12)
-            return;
-        ItemSlot[] slots1 = this.slots;
-        this.slots = this.GenEmptySlots(15);
-        for (int index = 0; index < slots1.Length; ++index)
-            this.slots[index] = slots1[index];
-    }
-    
-    public void InventoryCharacterToTreeAttributes(ITreeAttribute tree)
-    {
-        this.SlotsToTreeAttributes(this.slots, tree);
-        this.ResolveBlocksOrItems();
-    }
-    
-    public virtual ItemSlot[] SlotsFromTreeAttributes(
-    ITreeAttribute tree,
-    ItemSlot[] slots = null,
-    List<ItemSlot> modifiedSlots = null)
-  {
-    if (tree == null)
-      return slots;
-    if (slots == null)
-      slots = this.GenEmptySlots(tree.GetInt("qslots"));
-    for (int index = 0; index < slots.Length; ++index)
-    {
-      ItemStack itemstack1 = tree.GetTreeAttribute(nameof (slots))?.GetItemstack(index.ToString() ?? "");
-      slots[index].Itemstack = itemstack1;
-      if (this.Api?.World != null)
-      {
-        itemstack1?.ResolveBlockOrItem(this.Api.World);
-        if (modifiedSlots != null)
-        {
-          ItemStack itemstack2 = slots[index].Itemstack;
-          if (((itemstack1 == null ? 0 : (!itemstack1.Equals(this.Api.World, itemstack2, Array.Empty<string>()) ? 1 : 0)) | (itemstack2 == null ? (false ? 1 : 0) : (!itemstack2.Equals(this.Api.World, itemstack1, Array.Empty<string>()) ? 1 : 0))) != 0)
-            modifiedSlots.Add(slots[index]);
-        }
-      }
-    }
-    return slots;
-  }
-    */
     
     public void ToTreeAttributes(ITreeAttribute invtree, uint mods)
     {
         invtree.SetInt("modMask", (int)mods);//Keep track of the modMask to prevent attempting to load data that was never saved.
-        invtree.SetBytes("loadoutName", SerializerUtil.Serialize(loadoutName));
-        invtree.SetBytes("ownerUID", SerializerUtil.Serialize(OwnerUID));
+        invtree.SetString("loadoutName", loadoutName);
+        invtree.SetString("ownerUID", OwnerUID);
         //Only saving data that is requested to be saved
-        if ((mods & nickname) == nickname) invtree.SetBytes("nickName", SerializerUtil.Serialize(nickName));//nickname
+        if (LoadoutContentManager.theBasicsLoaded && (mods & nickname) == nickname)
+        {
+            invtree.SetString("nickName", nickName);//nickname
+        }
         
         if ((mods & character) == character) invtree.SetBytes("packet", SerializerUtil.Serialize(packet));//character
         
@@ -332,10 +303,10 @@ public class Loadout
             if (kvp.Value is InventoryPlayerCreative) continue;
             if (kvp.Value is InventoryPlayerBackpacks)
             {
-                invtree.SetInt("slotCount" + kvp.Key, ((InventoryPlayerBackpacksFix)kvp.Value).Count);
-                for (int i = 0; i < ((InventoryPlayerBackpacksFix)kvp.Value).Count; i++)
+                invtree.SetInt("slotCount" + kvp.Key, ((InventoryPlayerBackpacks)kvp.Value).Count);
+                for (int i = 0; i < ((InventoryPlayerBackpacks)kvp.Value).Count; i++)
                 {
-                    ItemStack? stack = ((InventoryPlayerBackpacksFix)kvp.Value)[i].Itemstack;
+                    ItemStack? stack = ((InventoryPlayerBackpacks)kvp.Value)[i].Itemstack;
                     if (stack != null)
                     {
                         invtree.SetItemstack(kvp.Key + "-" + i, stack);
@@ -361,10 +332,12 @@ public class Loadout
     {
         mask = (uint)invtree.GetInt("modMask");
         mask = (mask & mods);
-        loadoutName = SerializerUtil.Deserialize<string>(invtree.GetBytes("loadoutName"));
-        OwnerUID = SerializerUtil.Deserialize<string>(invtree.GetBytes("ownerUID"));
-        
-        if ((mask & nickname) == nickname) nickName = SerializerUtil.Deserialize<string>(invtree.GetBytes("nickName"));
+        loadoutName = invtree.GetString("loadoutName");
+        OwnerUID = invtree.GetString("ownerUID");
+        if (LoadoutContentManager.theBasicsLoaded && (mask & nickname) == nickname)
+        {
+            nickName = invtree.GetString("nickName");
+        }
         
         if ((mask & character) == character)packet = SerializerUtil.Deserialize<CharacterSelectionPacket>(invtree.GetBytes("packet"));
         
@@ -387,22 +360,22 @@ public class Loadout
                         if (itemstack1 != null)
                         {
                             ((InventoryPlayerBackpacksFix)kvp.Value)[index].Itemstack = itemstack1;
-                            api.Logger.Event("(FromTreeAttributes) slot itemstack: " + ((InventoryPlayerBackpacksFix)kvp.Value)[index].Itemstack.Id);
+                            //.Event("(FromTreeAttributes) slot itemstack: " + ((InventoryPlayerBackpacksFix)kvp.Value)[index].Itemstack.Id);
                             if (this.api?.World != null)
                             {
                                 ((InventoryPlayerBackpacksFix)kvp.Value)[index].Itemstack.ResolveBlockOrItem(this.api.World);
                             }
                         }
-                        else
-                        {
-                            api.Logger.Event("(FromTreeAttributes) slot is null");
-                        }
+                        //else
+                        //{
+                            //api.Logger.Event("(FromTreeAttributes) slot is null");
+                        //}
                     }
                 }
-                else
-                {
-                    api.Logger.Event("Slot count is null or 0");
-                }
+                //else
+                //{
+                    //api.Logger.Event("Slot count is null or 0");
+                //}
             }
             else if (kvp.Value is InventoryCharacter)
             {
