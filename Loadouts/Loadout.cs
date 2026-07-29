@@ -54,6 +54,7 @@ public class Loadout
     public EnumGameMode gameMode;
     public SurvivalPlayerData survivalPlayerData;
     public NutritionData nutritionData;
+    public Ailments ailments;
     
     private List<ClothStack> clothes = new();
     private int count = 0;
