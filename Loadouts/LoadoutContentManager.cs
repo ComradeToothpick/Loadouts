@@ -142,7 +142,14 @@ public class LoadoutContentManager : ModSystem
 
                     if (found)
                     {
-                        if (string.IsNullOrEmpty(loadoutName)) return TextCommandResult.Error("No loadout name provided");
+                        if (string.IsNullOrEmpty(loadoutName))
+                        {
+                            if (prevLoadouts.ContainsKey(byPlayer.PlayerUID))
+                            {
+                                
+                            }
+                            else return TextCommandResult.Error("No loadout name provided and prev loadout does not exist");
+                        }
                         Loadout loadout = CreateLoadout((IServerPlayer)byPlayer, loadoutName, api);
                         return UpdateLoadoutContent(loadout, byPlayer, loadoutName, mods);
                     }
@@ -305,7 +312,7 @@ public class LoadoutContentManager : ModSystem
             {
                 mods = mods | inventory;
             }
-            if (arguments.Contains("position") || arguments.Contains("pos") || arguments.Contains("location") || arguments.Contains("loc") || arguments.Contains("l"))
+            if (arguments.Contains("position") || arguments.Contains("pos") || arguments.Contains("p") || arguments.Contains("location") || arguments.Contains("loc") || arguments.Contains("l"))
             {
                 mods = mods | position;
             }
@@ -357,15 +364,22 @@ public class LoadoutContentManager : ModSystem
     public TextCommandResult ApplyLoadout(Loadout loadout, IServerPlayer byPlayer, uint mods)
     {
         uint mask = loadout.mask;
-        if (currentLoadouts.ContainsKey(byPlayer.PlayerUID)) prevLoadouts[byPlayer.PlayerUID] = currentLoadouts[byPlayer.PlayerUID];
+        
+        if (currentLoadouts.ContainsKey(byPlayer.PlayerUID))
+        {
+            string currentName = currentLoadouts[byPlayer.PlayerUID].loadoutName;
+            currentLoadouts[byPlayer.PlayerUID] = CreateLoadout(byPlayer, currentName, byPlayer.Entity.Api);
+            prevLoadouts[byPlayer.PlayerUID] = currentLoadouts[byPlayer.PlayerUID];
+        }
+        else
+        {
+            prevLoadouts[byPlayer.PlayerUID] = CreateLoadout(byPlayer, "prev", byPlayer.Entity.Api);
+        }
         
         if (loadout.entityPos != null && (mask & mods & position) == position)
         {
             byPlayer.Entity.TeleportTo(loadout.entityPos);
         }
-        if ((mask & mods & character) == character) CharacterUpdate(byPlayer, loadout.packet);
-        if ((mask & mods & inventory) == inventory) loadout.GiveInventoryCopy(byPlayer);
-        
         if (theBasicsLoaded && (mask & mods & nickname) == nickname) 
         {
             ModConfig Config = _sapi.ModLoader.GetModSystem<RPProximityChatSystem>().Config;
@@ -373,6 +387,9 @@ public class LoadoutContentManager : ModSystem
             byPlayer.SetNickname(loadout.nickName, Config); 
             SwapOutNameTag(byPlayer);
         }
+        if ((mask & mods & character) == character) CharacterUpdate(byPlayer, loadout.packet);
+        if ((mask & mods & inventory) == inventory) loadout.GiveInventoryCopy(byPlayer);
+        
         currentLoadouts[byPlayer.PlayerUID] = loadout;
         string name = loadout.loadoutName.Replace("-" + byPlayer.PlayerUID, "");
         return TextCommandResult.Success("Successfully applied loadout " + name);
