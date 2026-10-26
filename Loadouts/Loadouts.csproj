@@ -6,6 +6,9 @@
         <VINTAGE_STORY Condition="'$(USERNAME)' == 'siimr'">$(SIIM_VINTAGE_STORY)</VINTAGE_STORY>
         <VINTAGE_STORY_DATA Condition="'$(USERNAME)' == 'siimr'">$(SIIM_VINTAGE_STORY_DATA)</VINTAGE_STORY_DATA>
         <TargetFramework>net10.0</TargetFramework>
+    </PropertyGroup>
+
+    <PropertyGroup>
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
         <OutputPath>bin\$(Configuration)\Mods\mod</OutputPath>
         <Nullable>enable</Nullable>

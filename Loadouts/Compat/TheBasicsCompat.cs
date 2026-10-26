@@ -19,8 +19,8 @@ public class TheBasicsCompat
     private static void SetNicknameInternal(ICoreServerAPI sapi, IServerPlayer byPlayer, Loadout loadout)
     {
         ModConfig Config = sapi.ModLoader.GetModSystem<RPProximityChatSystem>().Config;
-        sapi.Logger.Event("Nickname: " + loadout.nickName);
-        byPlayer.SetNickname(loadout.nickName, Config); 
+        if (string.IsNullOrWhiteSpace(loadout.nickName)) byPlayer.ClearNickname(Config);
+        else byPlayer.SetNickname(loadout.nickName, Config);
         SwapOutNameTag(byPlayer, sapi);
     }
     
@@ -50,7 +50,7 @@ public class TheBasicsCompat
         string displayName;
         if (Config.ShowNicknameInNametag)
         {
-            var nickname = player.GetNickname();
+            var nickname = player.HasNickname(Config) ? player.GetNickname(Config) : null;
             if (string.IsNullOrWhiteSpace(nickname))
             {
                 displayName = Config.ShowPlayerNameInNametag ? player.PlayerName : "";
@@ -68,16 +68,16 @@ public class TheBasicsCompat
         behavior.SetName(displayName);
     }
 
-    public static string GetNickname(ICoreServerAPI sapi, IServerPlayer byPlayer)
+    public static string? GetNickname(ICoreServerAPI sapi, IServerPlayer byPlayer)
     {
         if (LoadoutContentManager.theBasicsLoaded) return GetNicknameInternal(sapi, byPlayer);
         return byPlayer.PlayerName;
     }
     
     [MethodImpl( MethodImplOptions.NoInlining)]
-    public static string GetNicknameInternal(ICoreServerAPI sapi, IServerPlayer byPlayer)
+    public static string? GetNicknameInternal(ICoreServerAPI sapi, IServerPlayer byPlayer)
     {
         ModConfig Config = sapi.ModLoader.GetModSystem<RPProximityChatSystem>().Config;
-        return (byPlayer).GetNickname(Config);
+        return byPlayer.HasNickname(Config) ? byPlayer.GetNickname(Config) : null;
     }
 }

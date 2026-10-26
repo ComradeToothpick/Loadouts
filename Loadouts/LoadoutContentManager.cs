@@ -25,7 +25,6 @@ namespace Loadouts;
 public class LoadoutContentManager : ModSystem
 {
     public Dictionary<string, Loadout> prevLoadouts = new Dictionary<string, Loadout>();
-    public Dictionary<string, Loadout> currentLoadouts = new Dictionary<string, Loadout>();
     public const int MaxLoadoutSavedPerPlayer = 10;
     private ICoreServerAPI _sapi = null!;
     private CharacterSystem system;
@@ -277,7 +276,7 @@ public class LoadoutContentManager : ModSystem
     private uint CollectMods(string[] arguments)
     {
         uint mods = 0;
-        if (arguments.Contains("all"))//not super optimal, but it doesn't really need to be
+        if (arguments.Contains("all") || arguments.Contains("a"))//not super optimal, but it doesn't really need to be
         {
             mods = mods | all;
             
@@ -293,7 +292,7 @@ public class LoadoutContentManager : ModSystem
             {
                 mods = mods & ~inventory;
             }
-            if (arguments.Contains("-position") || arguments.Contains("-pos") || arguments.Contains("-location") || arguments.Contains("-loc") || arguments.Contains("-l"))
+            if (arguments.Contains("-position") || arguments.Contains("-pos") || arguments.Contains("-p") || arguments.Contains("-location") || arguments.Contains("-loc") || arguments.Contains("-l"))
             {
                 mods = mods & ~position;
             }
@@ -357,25 +356,15 @@ public class LoadoutContentManager : ModSystem
     private Loadout CreateLoadout(IServerPlayer byPlayer, string loadoutName, ICoreAPI api)
     {
         string serverLoadoutName = loadoutName + "-" + byPlayer.PlayerUID;
-        Loadout loadout = new Loadout(serverLoadoutName, byPlayer, api);
+        Loadout loadout = new Loadout(serverLoadoutName, byPlayer, api, all);
         return loadout;
     }
 
     public TextCommandResult ApplyLoadout(Loadout loadout, IServerPlayer byPlayer, uint mods)
     {
         uint mask = loadout.mask;
-        
-        if (currentLoadouts.ContainsKey(byPlayer.PlayerUID))
-        {
-            string currentName = currentLoadouts[byPlayer.PlayerUID].loadoutName;
-            currentLoadouts[byPlayer.PlayerUID] = CreateLoadout(byPlayer, currentName, byPlayer.Entity.Api);
-            prevLoadouts[byPlayer.PlayerUID] = currentLoadouts[byPlayer.PlayerUID];
-        }
-        else
-        {
-            prevLoadouts[byPlayer.PlayerUID] = CreateLoadout(byPlayer, "prev", byPlayer.Entity.Api);
-        }
-        
+        prevLoadouts[byPlayer.PlayerUID] = CreateLoadout(byPlayer, "prev", byPlayer.Entity.Api);
+
         if (loadout.entityPos != null && (mask & mods & position) == position)
         {
             byPlayer.Entity.TeleportTo(loadout.entityPos);
@@ -384,21 +373,46 @@ public class LoadoutContentManager : ModSystem
         {
             TheBasicsCompat.SetNickname(_sapi, byPlayer, loadout);
         }
-        if ((mask & mods & character) == character) CharacterUpdate(byPlayer, loadout.packet);
+        if ((mask & mods & character) == character) CharacterUpdate(byPlayer, loadout);
         if ((mask & mods & inventory) == inventory) loadout.GiveInventoryCopy(byPlayer);
-        
-        currentLoadouts[byPlayer.PlayerUID] = loadout;
+
         string name = loadout.loadoutName.Replace("-" + byPlayer.PlayerUID, "");
         return TextCommandResult.Success("Successfully applied loadout " + name);
     }
     
-    private void CharacterUpdate(IServerPlayer fromPlayer, CharacterSelectionPacket p)
+    private void CharacterUpdate(IServerPlayer fromPlayer, Loadout loadout)
     {
+        CharacterSelectionPacket? p = loadout.packet;
+        if (p == null) return;
         system.setCharacterClass(fromPlayer.Entity, p.CharacterClass, false);
-        EntityBehaviorExtraSkinnable behavior = fromPlayer.Entity.GetBehavior<EntityBehaviorExtraSkinnable>();
-        behavior.ApplyVoice(p.VoiceType, p.VoicePitch, false);
-        foreach (KeyValuePair<string, string> skinPart in p.SkinParts)
-            behavior.selectSkinPart(skinPart.Key, skinPart.Value, false);
+        SyncedTreeAttribute attributes = fromPlayer.Entity.WatchedAttributes;
+        if (loadout.skinModel != null)
+        {
+            if (loadout.extraTraits != null)
+            {
+                attributes.SetStringArray("extraTraits", loadout.extraTraits);
+                attributes.MarkPathDirty("extraTraits");
+            }
+            attributes.SetFloat("entitySize", loadout.entitySize);
+            attributes.SetString("skinModel", loadout.skinModel);
+        }
+        if (attributes["skinConfig"] is not ITreeAttribute skinConfig)
+        {
+            skinConfig = new TreeAttribute();
+            attributes["skinConfig"] = skinConfig;
+        }
+        if (skinConfig["appliedParts"] is not ITreeAttribute appliedParts)
+        {
+            appliedParts = new TreeAttribute();
+            skinConfig["appliedParts"] = appliedParts;
+        }
+        if (p.SkinParts != null)
+        {
+            foreach (KeyValuePair<string, string> skinPart in p.SkinParts)
+                appliedParts[skinPart.Key] = new StringAttribute(skinPart.Value);
+        }
+        if (p.VoiceType != null) attributes.SetString("voicetype", p.VoiceType);
+        if (p.VoicePitch != null) attributes.SetString("voicepitch", p.VoicePitch);
         DateTime utcNow = DateTime.UtcNow;
         fromPlayer.ServerData.LastCharacterSelectionDate = $"{utcNow.ToShortDateString()} {utcNow.ToShortTimeString()}";
         
@@ -525,7 +539,13 @@ public class LoadoutContentManager : ModSystem
             //Consolidate the original and the new based on the mods, checking that modMask for the update does not include a trait AND that the original does to instead use that
         
             if ((mods & position) != position && (originalLoadout.mask & position) == position) loadout.entityPos = originalLoadout.entityPos;
-            if ((mods & character) != character && (originalLoadout.mask & character) == character) loadout.packet = originalLoadout.packet;
+            if ((mods & character) != character && (originalLoadout.mask & character) == character)
+            {
+                loadout.packet = originalLoadout.packet;
+                loadout.skinModel = originalLoadout.skinModel;
+                loadout.entitySize = originalLoadout.entitySize;
+                loadout.extraTraits = originalLoadout.extraTraits;
+            }
             if ((mods & inventory) != inventory && (originalLoadout.mask & inventory) == inventory) loadout.Inventories = originalLoadout.Inventories;
             if (theBasicsLoaded) if ((mods & nickname) != nickname && (originalLoadout.mask & nickname) == nickname) loadout.nickName = originalLoadout.nickName;
             //Define a new mask that contains everything remaining from the original and everything new from the update

@@ -48,6 +48,9 @@ public class Loadout
     public string loadoutName;
     public EntityPos entityPos;
     public CharacterSelectionPacket packet;
+    public string? skinModel;
+    public float entitySize;
+    public string[]? extraTraits;
     public string nickName;
     public EnumGameMode gameMode;
     public SurvivalPlayerData survivalPlayerData;
@@ -71,7 +74,7 @@ public class Loadout
     public Loadout(string loadoutName, IServerPlayer byPlayer, ICoreAPI api, uint mods = 0)
     {
         this.api = api;
-        this.entityPos = byPlayer.Entity.Pos;
+        this.entityPos = byPlayer.Entity.Pos.Copy();
         if (api is ICoreServerAPI && LoadoutContentManager.theBasicsLoaded && (mods & nickname) == nickname)
         {
             nickName = TheBasicsCompat.GetNickname((ICoreServerAPI)api, byPlayer);
@@ -89,9 +92,17 @@ public class Loadout
             });
             count++;
         });
-        EntityBehaviorExtraSkinnable behavior = byPlayer.Entity.GetBehavior<EntityBehaviorExtraSkinnable>();
-        foreach (AppliedSkinnablePartVariant appliedSkinPart in (IEnumerable<AppliedSkinnablePartVariant>) behavior.AppliedSkinParts)
-            skinParts[appliedSkinPart.PartCode] = appliedSkinPart.Code;
+        ITreeAttribute? appliedParts = byPlayer.Entity.WatchedAttributes.GetTreeAttribute("skinConfig")?.GetTreeAttribute("appliedParts");
+        if (appliedParts != null)
+        {
+            foreach (KeyValuePair<string, IAttribute> part in appliedParts)
+            {
+                if (part.Value is StringAttribute variant) skinParts[part.Key] = variant.value;
+            }
+        }
+        skinModel = byPlayer.Entity.WatchedAttributes.GetString("skinModel");
+        entitySize = byPlayer.Entity.WatchedAttributes.GetFloat("entitySize", 1f);
+        extraTraits = byPlayer.Entity.WatchedAttributes.GetStringArray("extraTraits");
         string classCode = byPlayer.Entity.WatchedAttributes.GetAsString("characterClass", "commoner");
         //api.Logger.Event("Class Code: " + classCode);
         packet = new()
@@ -100,8 +111,8 @@ public class Loadout
             Clothes = clothes.ToArray(),
             CharacterClass = classCode,
             SkinParts = skinParts,
-            VoiceType = behavior.VoiceType,
-            VoicePitch = behavior.VoicePitch
+            VoiceType = byPlayer.Entity.WatchedAttributes.GetString("voicetype"),
+            VoicePitch = byPlayer.Entity.WatchedAttributes.GetString("voicepitch")
         };
         //this.system = api.ModLoader.GetModSystem<CharacterSystem>();
         this.loadoutName = loadoutName;
@@ -142,16 +153,18 @@ public class Loadout
             }
             else if (byPlayer.InventoryManager.Inventories[invKey] is InventoryCharacter)
             {
-                inv = new InventoryCharacter(invKey, byPlayer.PlayerUID, api);
-                count = 0;
-                for (int i = 0; i < ((InventoryCharacter)byPlayer.InventoryManager.Inventories[invKey]).Count; i++)
-                {
-                    ItemStack stack = ((ItemSlotCharacter)((InventoryCharacter)byPlayer.InventoryManager.Inventories[invKey])[i]).Itemstack;
-                    if (stack != null) ((InventoryCharacter)inv)[i].Itemstack = stack;
-                }
-                Inventories.Add(invKey, inv);
+                Inventories.Add(invKey, CreateCharacterInventory(invKey, byPlayer.PlayerUID, byPlayer.InventoryManager.Inventories[invKey].ToArray()));
             }
         }
+    }
+
+    private InventoryCharacter CreateCharacterInventory(string invKey, string playerUID, ItemSlot[] slots)
+    {
+        TreeAttribute tree = new();
+        SlotsToTreeAttributes(slots, tree);
+        InventoryCharacter inv = new(invKey, playerUID, api);
+        inv.FromTreeAttributes(tree);
+        return inv;
     }
 
     public void ApplyLoadoutAppearance()
@@ -171,101 +184,13 @@ public class Loadout
         player.InventoryManager.DiscardAll();
         foreach (KeyValuePair<string, InventoryBasePlayer> kvp in Inventories)
         {
-            if (player.InventoryManager.Inventories.ContainsKey(kvp.Key))
-            {
-                player.InventoryManager.Inventories[kvp.Key] = kvp.Value;
-            }
-            else player.InventoryManager.Inventories.Add(kvp.Key, kvp.Value);
-            
-            int playerInvCount = player.InventoryManager.Inventories[kvp.Key].Count;
-            int newInvCount = Inventories[kvp.Key].Count;
-            if (playerInvCount < newInvCount)
-            {
-                if (kvp.Value is InventoryCharacter)
-                {
-                    ((InventoryCharacter)player.InventoryManager.Inventories[kvp.Key])
-                        .GenEmptySlots(newInvCount - playerInvCount);
-                }
-                else
-                {
-                    ((InventoryBasePlayer)player.InventoryManager.Inventories[kvp.Key])
-                        .GenEmptySlots(newInvCount - playerInvCount);
-                }
-            }
-            
+            if (!player.InventoryManager.Inventories.TryGetValue(kvp.Key, out IInventory? playerInv) || playerInv == null) continue;
             for (int i = 0; i < kvp.Value.Count; i++)
             {
-                if (kvp.Value is InventoryCharacter)
-                {
-                    ItemStack? stack = ((ItemSlotCharacter)((InventoryCharacter)kvp.Value)[i]).Itemstack;
-                    if (stack != null)
-                    {
-                        if (((ItemSlotCharacter)((InventoryCharacter)player.InventoryManager.Inventories[kvp.Key])[i])
-                            .Itemstack != null)
-                        {
-                            ((ItemSlotCharacter)((InventoryCharacter)player.InventoryManager.Inventories[kvp.Key])[i]).Itemstack.SetFrom(stack);
-                        }
-                        else
-                        {
-                            ((ItemSlotCharacter)((InventoryCharacter)player.InventoryManager.Inventories[kvp.Key])[i]).Itemstack = stack.Clone();
-                        }
-                    }
-                    else
-                    {
-                        if (player.InventoryManager.Inventories[kvp.Key][i] != null && player.InventoryManager.Inventories[kvp.Key][i].Itemstack != null)
-                        {
-                            player.InventoryManager.Inventories[kvp.Key][i].TakeOutWhole();
-                        }
-                    }
-                    player.InventoryManager.Inventories[kvp.Key][i].MarkDirty();
-                }
-                else if (kvp.Value is InventoryPlayerBackpacks)
-                {
-                    ItemStack? stack = ((InventoryPlayerBackpacks)kvp.Value)[i].Itemstack;
-                    if (stack != null)
-                    {
-                        if (((InventoryPlayerBackpacks)player.InventoryManager.Inventories[kvp.Key])[i].Itemstack !=
-                            null)
-                        {
-                            ((InventoryPlayerBackpacks)player.InventoryManager.Inventories[kvp.Key])[i].Itemstack.SetFrom(stack);
-                        }
-                        else
-                        {
-                            ((InventoryPlayerBackpacks)player.InventoryManager.Inventories[kvp.Key])[i].Itemstack = stack.Clone();
-                        }
-                    }
-                    else
-                    {
-                        if (player.InventoryManager.Inventories[kvp.Key][i] != null && player.InventoryManager.Inventories[kvp.Key][i].Itemstack != null)
-                        {
-                            player.InventoryManager.Inventories[kvp.Key][i].TakeOutWhole();
-                        }
-                    }
-                    player.InventoryManager.Inventories[kvp.Key][i].MarkDirty();
-                }
-                else
-                {
-                    ItemStack? stack = kvp.Value[i].Itemstack;
-                    if (stack != null)
-                    {
-                        if (player.InventoryManager.Inventories[kvp.Key][i].Itemstack != null)
-                        {
-                            player.InventoryManager.Inventories[kvp.Key][i].Itemstack.SetFrom(stack);
-                        }
-                        else
-                        {
-                            player.InventoryManager.Inventories[kvp.Key][i].Itemstack = stack;
-                        }
-                    }
-                    else
-                    {
-                        if (player.InventoryManager.Inventories[kvp.Key][i] != null && player.InventoryManager.Inventories[kvp.Key][i].Itemstack != null)
-                        {
-                            player.InventoryManager.Inventories[kvp.Key][i].TakeOutWhole();
-                        }
-                    }
-                    player.InventoryManager.Inventories[kvp.Key][i].MarkDirty();
-                }
+                ItemSlot? targetSlot = playerInv[i];
+                if (targetSlot == null) continue;
+                targetSlot.Itemstack = kvp.Value[i]?.Itemstack?.Clone();
+                targetSlot.MarkDirty();
             }
         }
     }
@@ -288,12 +213,18 @@ public class Loadout
         invtree.SetString("loadoutName", loadoutName);
         invtree.SetString("ownerUID", OwnerUID);
         //Only saving data that is requested to be saved
-        if (LoadoutContentManager.theBasicsLoaded && (mods & nickname) == nickname)
+        if (LoadoutContentManager.theBasicsLoaded && (mods & nickname) == nickname && nickName != null)
         {
             invtree.SetString("nickName", nickName);//nickname
         }
         
         if ((mods & character) == character) invtree.SetBytes("packet", SerializerUtil.Serialize(packet));//character
+        if ((mods & character) == character && skinModel != null)
+        {
+            invtree.SetString("skinModel", skinModel);
+            invtree.SetFloat("entitySize", entitySize);
+            if (extraTraits != null) invtree["extraTraits"] = new StringArrayAttribute(extraTraits);
+        }
         
         if ((mods & position) == position) invtree.SetBytes("entityPos", SerializerUtil.Serialize(entityPos));//position
         
@@ -339,6 +270,12 @@ public class Loadout
         }
         
         if ((mask & character) == character)packet = SerializerUtil.Deserialize<CharacterSelectionPacket>(invtree.GetBytes("packet"));
+        if ((mask & character) == character)
+        {
+            skinModel = invtree.GetString("skinModel");
+            entitySize = invtree.GetFloat("entitySize", 1f);
+            extraTraits = (invtree["extraTraits"] as StringArrayAttribute)?.value;
+        }
         
         if ((mask & position) == position) entityPos = SerializerUtil.Deserialize<EntityPos>(invtree.GetBytes("entityPos"));
         
@@ -379,23 +316,17 @@ public class Loadout
             else if (kvp.Value is InventoryCharacter)
             {
                 int slotCount = invtree.GetInt("slotCount" + kvp.Key);
-                if (slotCount != null && slotCount > 0)
+                if (slotCount <= 0) continue;
+                TreeAttribute stacks = new();
+                for (int index = 0; index < slotCount; ++index)
                 {
-                    ((InventoryCharacter)kvp.Value).GenEmptySlots(slotCount);
-                    for (int index = 0; index < kvp.Value.Count; ++index)
-                    {
-                        ItemStack itemstack = invtree.GetItemstack(kvp.Key + "-" + index);
-                        if (itemstack != null)
-                        {
-                            ((InventoryCharacter)kvp.Value)[index].Itemstack = null;
-                        }
-                        ((InventoryCharacter)kvp.Value)[index].Itemstack = itemstack;
-                        if (api.World != null && ((InventoryCharacter)kvp.Value)[index].Itemstack != null)
-                        {
-                            ((InventoryCharacter)kvp.Value)[index].Itemstack!.ResolveBlockOrItem(api.World);
-                        }
-                    }
+                    ItemStack? itemstack = invtree.GetItemstack(kvp.Key + "-" + index);
+                    if (itemstack != null) stacks.SetItemstack(index.ToString(), itemstack);
                 }
+                TreeAttribute slotTree = new();
+                slotTree.SetInt("qslots", slotCount);
+                slotTree["slots"] = stacks;
+                kvp.Value.FromTreeAttributes(slotTree);
             }
             else
             {
