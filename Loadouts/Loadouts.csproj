@@ -1,6 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
+        <SIIM_VINTAGE_STORY>C:\Users\siimr\AppData\Roaming\VSLGameVersions\1.22.7</SIIM_VINTAGE_STORY>
+        <SIIM_VINTAGE_STORY_DATA>C:\Users\siimr\AppData\Roaming\VSLInstallations\1.22.7</SIIM_VINTAGE_STORY_DATA>
+        <VINTAGE_STORY Condition="'$(USERNAME)' == 'siimr'">$(SIIM_VINTAGE_STORY)</VINTAGE_STORY>
+        <VINTAGE_STORY_DATA Condition="'$(USERNAME)' == 'siimr'">$(SIIM_VINTAGE_STORY_DATA)</VINTAGE_STORY_DATA>
         <TargetFramework>net10.0</TargetFramework>
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
         <OutputPath>bin\$(Configuration)\Mods\mod</OutputPath>
@@ -9,13 +13,15 @@
 
     <ItemGroup>
         <Reference Include="CombatOverhaul">
-          <HintPath>..\..\..\..\..\..\ModReferences\combatoverhaulfork_0.18.8\CombatOverhaul.dll</HintPath>
+            <HintPath>lib\CombatOverhaul.dll</HintPath>
+            <Private>false</Private>
         </Reference>
         <Reference Include="OverhaullibLegacyCompat">
-          <HintPath>..\..\..\..\..\..\ModReferences\overhaulliblegacycompat_1.2.14\OverhaullibLegacyCompat.dll</HintPath>
+            <HintPath>lib\OverhaullibLegacyCompat.dll</HintPath>
+            <Private>false</Private>
         </Reference>
         <Reference Include="thebasics">
-            <HintPath>..\..\..\..\..\..\ModReferences\thebasics\thebasics.dll</HintPath>
+            <HintPath>lib\thebasics.dll</HintPath>
             <Private>false</Private>
         </Reference>
         <Reference Include="VintagestoryAPI">
