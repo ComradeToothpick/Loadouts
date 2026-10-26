@@ -8,6 +8,12 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <Reference Include="CombatOverhaul">
+          <HintPath>..\..\..\..\..\..\ModReferences\combatoverhaulfork_0.18.8\CombatOverhaul.dll</HintPath>
+        </Reference>
+        <Reference Include="OverhaullibLegacyCompat">
+          <HintPath>..\..\..\..\..\..\ModReferences\overhaulliblegacycompat_1.2.14\OverhaullibLegacyCompat.dll</HintPath>
+        </Reference>
         <Reference Include="thebasics">
             <HintPath>..\..\..\..\..\..\ModReferences\thebasics\thebasics.dll</HintPath>
             <Private>false</Private>

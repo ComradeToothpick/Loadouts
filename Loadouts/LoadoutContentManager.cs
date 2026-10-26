@@ -7,7 +7,6 @@ using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using HarmonyLib;
-using Microsoft.VisualBasic;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
@@ -17,11 +16,9 @@ using Vintagestory.API.Server;
 using Vintagestory.API.Util;
 using Vintagestory.Common;
 using Vintagestory.GameContent;
-using thebasics.Configs;
-using thebasics.Extensions;
-using thebasics.ModSystems.CharacterSheets;
-using thebasics.ModSystems.ProximityChat;
-using thebasics.Utilities;
+
+using System.Reflection;
+using Loadouts.Compat;
 
 namespace Loadouts;
 
@@ -32,11 +29,14 @@ public class LoadoutContentManager : ModSystem
     public const int MaxLoadoutSavedPerPlayer = 10;
     private ICoreServerAPI _sapi = null!;
     private CharacterSystem system;
-    private const uint all = 15;
+    private const uint all = 15;//change to 127 once new categories are added
     private const uint character = 1;
     private const uint nickname = 2;
     private const uint inventory = 4;
     private const uint position = 8;
+    private const uint gamemode = 16;
+    private const uint foodgroups = 32;
+    private const uint satiation = 64;
     public static bool theBasicsLoaded = false;
     
 
@@ -380,12 +380,9 @@ public class LoadoutContentManager : ModSystem
         {
             byPlayer.Entity.TeleportTo(loadout.entityPos);
         }
-        if (theBasicsLoaded && (mask & mods & nickname) == nickname) 
+        if (theBasicsLoaded && (mask & mods & nickname) == nickname)
         {
-            ModConfig Config = _sapi.ModLoader.GetModSystem<RPProximityChatSystem>().Config;
-            _sapi.Logger.Event("Nickname: " + loadout.nickName);
-            byPlayer.SetNickname(loadout.nickName, Config); 
-            SwapOutNameTag(byPlayer);
+            TheBasicsCompat.SetNickname(_sapi, byPlayer, loadout);
         }
         if ((mask & mods & character) == character) CharacterUpdate(byPlayer, loadout.packet);
         if ((mask & mods & inventory) == inventory) loadout.GiveInventoryCopy(byPlayer);
@@ -491,7 +488,6 @@ public class LoadoutContentManager : ModSystem
         try
         {
             string path = GetLoadoutDataPath(player);
-            ModConfig Config = _sapi.ModLoader.GetModSystem<RPProximityChatSystem>().Config;
             string[] files = GetLoadoutDataFiles(player);
             for (int i = files.Length - 1; i > MaxLoadoutSavedPerPlayer - 2; i--)
             {
@@ -501,7 +497,7 @@ public class LoadoutContentManager : ModSystem
             var tree = new TreeAttribute();
             if (theBasicsLoaded)
             {
-                loadout.nickName = ((IServerPlayer)player).GetNickname(Config);//Make sure to collect this just in case
+                loadout.nickName = TheBasicsCompat.GetNickname(_sapi, (IServerPlayer)player);//Make sure to collect this just in case
             }
             loadout.ToTreeAttributes(tree, mods);
 
@@ -520,11 +516,10 @@ public class LoadoutContentManager : ModSystem
         try
         {
             string path = GetLoadoutDataPath(player);
-            ModConfig Config = _sapi.ModLoader.GetModSystem<RPProximityChatSystem>().Config;
             var tree = new TreeAttribute();
             if (theBasicsLoaded)
             {
-                loadout.nickName = ((IServerPlayer)player).GetNickname(Config);//Make sure to collect this
+                loadout.nickName = TheBasicsCompat.GetNickname(_sapi, (IServerPlayer)player); //Make sure to collect this
             }
             Loadout originalLoadout = LoadLoadout(player, loadoutName, 15);
             //Consolidate the original and the new based on the mods, checking that modMask for the update does not include a trait AND that the original does to instead use that
@@ -547,53 +542,5 @@ public class LoadoutContentManager : ModSystem
             _sapi.Logger.Error(e);
             return TextCommandResult.Error("Failed to update loadout " + loadoutName);
         }
-    }
-    
-    private void SwapOutNameTag(IServerPlayer player)
-    {
-        if (!theBasicsLoaded) return;
-        ModConfig Config = _sapi.ModLoader.GetModSystem<RPProximityChatSystem>().Config;
-        var behavior = player.Entity.GetBehavior<EntityBehaviorNameTag>();
-
-        if (behavior == null)
-        {
-            return;
-        }
-
-        // Apply visibility/range settings regardless of whether we're overriding the display name.
-        behavior.ShowOnlyWhenTargeted = Config.HideNametagUnlessTargeting;
-        behavior.RenderRange = Config.NametagRenderRange;
-
-        // Determine the visible nametag string.
-        string displayName;
-        if (Config.ShowNicknameInNametag)
-        {
-            var nickname = player.GetNickname();
-            if (string.IsNullOrWhiteSpace(nickname))
-            {
-                displayName = Config.ShowPlayerNameInNametag ? player.PlayerName : "";
-            }
-            else
-            {
-                displayName = Config.ShowPlayerNameInNametag ? $"{nickname} ({player.PlayerName})" : nickname;
-            }
-        }
-        else
-        {
-            displayName = Config.ShowPlayerNameInNametag ? player.PlayerName : "";
-        }
-
-        behavior.SetName(displayName);
-    }
-
-    private void SetNickname(string nickname, IServerPlayer byPlayer)
-    {
-        if (!theBasicsLoaded)
-        {
-            _sapi.Logger.Event("RPProximityChatSystem not found");
-            return;
-        }
-        byPlayer.SetNickname(nickname);
-        SwapOutNameTag(byPlayer);
     }
 }

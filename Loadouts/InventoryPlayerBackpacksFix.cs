@@ -1,6 +1,7 @@
 using System;
 using Vintagestory.API.Common;
 using Vintagestory.Common;
+using CombatOverhaul.Armor;
 
 namespace Loadouts;
 

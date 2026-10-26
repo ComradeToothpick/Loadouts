@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection.Metadata.Ecma335;
-using thebasics.Extensions;
-using thebasics.ModSystems.ProximityChat;
+using Loadouts.Compat;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
@@ -74,9 +72,9 @@ public class Loadout
     {
         this.api = api;
         this.entityPos = byPlayer.Entity.Pos;
-        if (LoadoutContentManager.theBasicsLoaded && (mods & nickname) == nickname)
+        if (api is ICoreServerAPI && LoadoutContentManager.theBasicsLoaded && (mods & nickname) == nickname)
         {
-            nickName = byPlayer.GetNickname();
+            nickName = TheBasicsCompat.GetNickname((ICoreServerAPI)api, byPlayer);
         }
         
         clothes.Clear();
